@@ -1,0 +1,253 @@
+<!doctype html>
+<html>
+    <head>
+        <title>PyFiddler                                        </title>
+        <script src="http://cdn.bootcss.com/jquery/3.0.0-alpha1/jquery.js"></script>
+        <link href="http://cdn.bootcss.com/bootstrap/3.3.5/css/bootstrap.min.css" rel="stylesheet">
+        <script src="http://cdn.bootcss.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
+        <style>
+            #tblog td {word-break:break-all;}
+            .mag {margin-left:5px; margin-bottom:5px; }
+        </style>
+        <script>
+
+            bkstat = {brs:'off',brq:'off'}
+
+            function changebk(t){
+                var b = $(t).attr('data-btype')
+                if(bkstat[b]=='off'){
+                    bkstat[b]='on'
+                    $(t).text('Release Request').removeClass('btn-primary').addClass('btn-danger')
+                }else{
+                    bkstat[b]='off'
+                    $(t).text('Block Request').removeClass('btn-danger').addClass('btn-primary')
+                }
+                $.get('ctrl',bkstat,function(d){
+                })
+            }
+
+            function release(t){
+                if(t==0){
+                    var rlst = 'request'
+                    var uuid = $('#req_info').attr('data-uuid')
+                    var method = $('#Fmethod').val()
+                    var url = $('#Furl').val()
+                    var headers = $('#req_info #Fheaders').val()
+                    var body = $('#req_info #Fbody').val()
+                    var vargs = {uuid:uuid,rlst:rlst,method:method,url:url,headers:headers,body:body}
+                    $.post('release',vargs,function(d){
+                    })
+                }else if(t==1){
+                    var rlst = 'response'
+                    var uuid = $('#res_info').attr('data-uuid')
+                    var code = $('#Fcode').val()
+                    var reason = $('#FReason').val()
+                    var headers = $('#res_info #Fheaders').val()
+                    var body = $('#res_info #Fbody').val()
+                    var vargs = {uuid:uuid,rlst:rlst,code:code,reason:reason,headers:headers,body:body}
+                    $.post('release',vargs,function(d){
+                    })
+                }else if(t==2){
+                    $.get('releaseall')
+                }
+            }
+
+            function initws(){
+                var ws = new WebSocket('ws://'+new URL(document.URL).host+'/ws')
+                ws.onmessage = function(e){
+                    var data = JSON.parse(e.data)
+                    var uuid = data[0]
+                    var item = data[1]
+                    if($('tr[data-uuid='+uuid+']').length){
+                        var color = codecolor(item.code)
+                        var ellist = $('tr[data-uuid='+uuid+'] td')
+                        var item = [item.Type,item.id,item.method,item.code,item.protocol,item.url,item.bodylen,item.cType]
+                        ellist.each(function(i,d){$(d).text(item[i])})
+                        $('tr[data-uuid='+uuid+']').removeClass().addClass(color)
+                    }else{
+                        var pad = ' class="'+codecolor(item.code)+'" '
+                        var info = [item.Type,item.id,item.method,item.code,item.protocol,item.url,item.bodylen,item.cType]
+                        var html = $('<tr '+pad+'data-uuid="'+uuid+'"><td>'+info.join('</td><td>')+'</td></tr>')
+                        $('#tblog tbody').append(html) 
+                        html.on('click',function(){
+                            fetchDetail($(this).attr('data-uuid'))
+                            $('#tblog tbody tr').removeClass('info')
+                            $(this).addClass('info')
+                            $('#control-panel').fadeIn()
+                        })
+                    }
+                }
+            }
+
+            function codecolor(code){
+                if(code>=100 && code<200){
+                    return 'text-muted'
+                }else if(code>=200 && code<300){
+                    return 'text-success'
+                }else if(code>=300 && code<400){ 
+                    return 'text-warning'
+                }else if(code>=400){
+                    return 'text-danger'
+                }
+            }
+
+            function genReqForm(uuid,d){
+                var render = $('#req_info').attr('data-uuid',uuid)
+                render.html(null)
+                var Fmethod = $('<input id="Fmethod" class="mag form-control input-sm" placeholder="Method">').val(d.method).css('width','80px')
+                render.append(Fmethod)
+                var Furl = $('<input id="Furl" class="mag form-control input-sm" placeholder="URI">').val(d.url).css('width','60%')
+                render.append(Furl).append('&nbsp;<span class="mag label label-info">HTTP/1.1</span><br />')
+                var Fheaders = $('<textarea id="Fheaders" class="mag form-control" wrap="soft"></textarea>').css('width','100%').css('height','150px').css('font-size','10px').css('white-space','nowrap')
+                d.req.headers.forEach(function(h){
+                    Fheaders.text(Fheaders.text()+h[0]+': '+h[1]+'\r\n')
+                })
+                render.append(Fheaders)
+                var Fbody = $('<textarea placeholder="body" id="Fbody" class="mag form-control" wrap="soft"></textarea>').css('width','100%').css('height','100px').css('font-size','10px').css('white-space','nowrap').val(d.req.body)
+                render.append(Fbody)
+                var btnhtml = '<br><b class="mag btn btn-primary" onclick="release(0)">Save and Release</b><b class="mag btn btn-info">Clone</b>'
+                render.append(btnhtml)
+                if(d.Type!='request'){
+                    $('#req_info .btn:first').attr('disabled','disabled')
+                    $('#req_info input').attr('readonly','readonly')
+                    $('#req_info textarea').attr('readonly','readonly')
+                }
+            }
+
+            function genResForm(uuid,d){
+                var render = $('#res_info').attr('data-uuid',uuid)
+                render.html(null)
+                render.append('<span class="label label-info mag">HTTP/1.1</span>')
+                var Fcode = $('<input id="Fcode" class="mag form-control input-sm" placeholder="Fcode">').val(d.code).css('width','50px')
+                render.append(Fcode)
+                var Freason = $('<input id="FReason" class="mag form-control input-sm" placeholder="Reason">').val(d.res.reason).css('width','150px')
+                render.append(Freason).append('<br>')
+                var Fheaders = $('<textarea id="Fheaders" class="mag form-control" wrap="soft"></textarea>').css('width','100%').css('height','150px').css('font-size','10px').css('white-space','nowrap')
+                d.res.headers.forEach(function(h){
+                    Fheaders.text(Fheaders.text()+h[0]+': '+h[1]+'\r\n')
+                })
+                render.append(Fheaders)
+                var Fbody = $('<textarea placeholder="body" id="Fbody" class="mag form-control" wrap="soft"></textarea>').css('width','100%').css('height','100px').css('font-size','10px').css('white-space','nowrap').val(d.res.body)
+                render.append(Fbody)
+                var btnhtml = '<br><b class="mag btn btn-primary" onclick="release(1)">Save and Release</b>'
+                render.append(btnhtml)
+                if(d.Type!='response'){
+                    $('#res_info .btn:first').attr('disabled','disabled')
+                    $('#res_info input').attr('readonly','readonly')
+                    $('#res_info textarea').attr('readonly','readonly')
+                }
+            }
+
+            function fetchDetail(uuid){
+                $.getJSON('detail',{uuid:uuid}, function(d){
+                    if(d.Type=='request') {
+                        genReqForm(uuid,d)
+                    }else{
+                        genReqForm(uuid,d)
+                        genResForm(uuid,d)
+                    }
+                })
+
+            }
+
+
+            function logTable(){
+                var codep = {404:'text-danger','304':'text-warning','200':'text-success','204':'text-muted','403':'text-danger'}
+                $.getJSON('show',function(d){
+                    $('#tblog tbody').html('')
+                    for(var uuid in d){
+                        var item = d[uuid]
+                        var pad = ' class="'+codecolor(item.code)+'" '
+                        var info = [item.Type,item.id,item.method,item.code,item.protocol,item.url,item.bodylen,item.cType]
+                        var html = '<tr '+pad+'data-uuid="'+uuid+'"><td>'+info.join('</td><td>')+'</td></tr>'
+                        $('#tblog tbody').append(html)
+                    }
+                    $('#tblog tbody tr').on('click',function(e){
+                        fetchDetail($(this).attr('data-uuid'))
+                        $('#tblog tbody tr').removeClass('info')
+                        $(this).addClass('info')
+                        $('#control-panel').fadeIn()
+                    })
+                })
+            }
+
+            function clearlog(){
+                $.get('clearlog',function(d){
+                    $('#tblog tbody').html('')
+                })
+            }
+
+
+            $(document).ready(function(){
+                logTable()
+                initws()
+                $('.panel-heading').on('click',function(){$(this).next('.panel-body').slideToggle('fast')})
+            })
+        </script>
+    </head>
+    <body>
+        <div class="container-fluid" style="padding:10px 5px 0px 5px">
+            <div class="alert alert-info">
+                <span style="font-size:16px">PyFiddler</span>
+                <span> | <i class="btn btn-primary btn-xs" onclick="clearlog()">clear log</i></span>
+                <span> | <i class="btn btn-success btn-xs" onclick="release(2)">Release All</i></span>
+                <span> | <i class="btn btn-primary btn-xs" data-btype="brq" onclick="changebk(this)">Block Request</i></span>
+                <span> | <i class="btn btn-primary btn-xs" data-btype="brs" onclick="changebk(this)">Block Response</i></span>
+
+            </div>
+
+            <div class="row" style="margin: 0px 0px 0px 0px">
+                <div class="col-md-6 col-lg-6">
+                    <div class="panel panel-primary">
+                        <div class="panel-heading">Sniffer Logger</div>
+                        <div class="panel-body" style="max-height:900px;overflow:auto">
+                            <table class="table table-bordered table-hover table-striped table-condensed" style="font-size:10px;table-layout:fixed" id="tblog">
+                                <thead>
+                                    <tr>
+                                        <td style="width:60px">status</td>
+                                        <td style="width:35px"># ID</td>
+                                        <td style="width:70px">method</td>
+                                        <td style="width:38px">code</td>
+                                        <td style="width:40px">proto</td>
+                                        <td style="">url</td>
+                                        <td style="width:52px">length</td>
+                                        <td style="width:138px">type</td>
+                                </thead>
+                                <tbody></tbody>
+
+                            </table>
+
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-6">
+                    <div class="panel panel-success">
+                        <div class="panel-heading">Control</div>
+                        <div class="panel-body">
+                            <div class="panel panel-default">
+                                <div class="panel-heading">Request</div>
+                                <div class="panel-body">
+                                    <div class="form-inline">
+                                        <div class="form-group" id="req_info" style="font-size:10px;width:100%"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <hr>
+
+                            <div class="panel panel-default">
+                                <div class="panel-heading">Response</div>
+                                <div class="panel-body">
+                                    <div class="form-inline">
+                                        <div class="form-group" id="res_info" style="font-size:10px;width:100%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </body>
+
+</html>
