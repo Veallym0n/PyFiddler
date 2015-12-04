@@ -1,18 +1,27 @@
-import sys
-reload(sys)
-sys.setdefaultencoding('utf8')
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
+import tornado
 import tornado.web
 import tornado.ioloop
 import tornado.gen
 import tornado.httpclient
 import tornado.httputil
 import tornado.websocket
+import tornado.options
+
+from tornado.options import define, options
+
 import json
 import urlparse
 from uuid import uuid4
 from pdb import set_trace as st
 from collections import OrderedDict as odict
+
+
+define('proxy', default=8888, type=int, help='run proxy server on this port')
+define('consle', default=8889, type=int, help='run console server on this port')
+
 
 #RequestPool = {}
 
@@ -137,7 +146,7 @@ class Proxy(tornado.web.RequestHandler):
 
     @property
     def conf(self):
-        return self.application.settings.get('c')
+        return self.settings.get('c')
 
     @tornado.web.asynchronous
     def get(self):
@@ -230,7 +239,7 @@ class WebServer(tornado.web.RequestHandler):
 
     @property
     def conf(self):
-        return self.application.settings.get('c')
+        return self.settings.get('c')
     
     @tornado.web.asynchronous
     def get(self,rtype):
@@ -331,6 +340,8 @@ class WSHandler(tornado.websocket.WebSocketHandler):
 
 
 def run():
+    tornado.options.parse_command_line()
+    
     proxy = tornado.web.Application([
         (r'.*',Proxy)
         ],**dict(c=conf))
@@ -340,8 +351,10 @@ def run():
         (r'/(.*)',WebServer)
         ],**dict(c=conf,debug=True))
 
-    proxy.listen(8888)
-    webapp.listen(8889)
+    proxy.listen(options.proxy)
+    webapp.listen(options.console)
     tornado.ioloop.IOLoop.instance().start()
 
-run()
+
+if __name__ == '__main__':
+    run()
