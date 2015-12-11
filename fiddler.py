@@ -20,7 +20,7 @@ from collections import OrderedDict as odict
 
 
 define('proxy', default=8888, type=int, help='run proxy server on this port')
-define('consle', default=8889, type=int, help='run console server on this port')
+define('console', default=8889, type=int, help='run console server on this port')
 
 
 #RequestPool = {}
