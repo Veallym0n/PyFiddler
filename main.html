@@ -13,6 +13,7 @@
 
             bkstat = {brs:'off',brq:'off'}
 
+
             function changebk(t){
                 var b = $(t).attr('data-btype')
                 if(bkstat[b]=='off'){
@@ -51,6 +52,7 @@
                     $.get('releaseall')
                 }
             }
+
 
             function initws(){
                 var ws = new WebSocket('ws://'+new URL(document.URL).host+'/ws')
@@ -105,8 +107,10 @@
                 render.append(Fheaders)
                 var Fbody = $('<textarea placeholder="body" id="Fbody" class="mag form-control" wrap="soft"></textarea>').css('width','100%').css('height','100px').css('font-size','10px').css('white-space','nowrap').val(d.req.body)
                 render.append(Fbody)
-                var btnhtml = '<br><b class="mag btn btn-primary" onclick="release(0)">Save and Release</b><b class="mag btn btn-info">Clone</b>'
-                render.append(btnhtml)
+                var btnreleasehtml = $('<br><b class="mag btn btn-primary" onclick="release(0)">Save and Release</b>')
+                var btnclonehtml = $('<b class="mag btn btn-info" onclick="Clone(this)">Clone</b>').attr('data-uuid',uuid)
+                render.append(btnreleasehtml)
+                render.append(btnclonehtml)
                 if(d.Type!='request'){
                     $('#req_info .btn:first').attr('disabled','disabled')
                     $('#req_info input').attr('readonly','readonly')
@@ -147,7 +151,12 @@
                         genResForm(uuid,d)
                     }
                 })
+            }
 
+            function Clone(o){
+                var uuid = $(o).attr('data-uuid')
+                $.getJSON('clone',{uuid:uuid}, function(d){
+                })
             }
 
 

@@ -56,10 +56,11 @@ class ReqInfo:
 
     idenity = 0
 
-    def __init__(self, uuid, handler, block_on_response = 1):
+    def __init__(self, uuid, handler, block_on_response = 1, isclone = False):
         self.uuid = uuid
         self.handler = handler
         self.blockType = ('response','request','released')[block_on_response]
+        self.isClone = isclone
         self.id = self.newid()
 
     @classmethod
@@ -117,10 +118,10 @@ class ReqInfo:
 
     def release(self):
         if self.blockType == 'request':
-            self.handler.start_request()
+            self.handler.start_request(self.isClone)
             return self
         elif self.blockType == 'response':
-            self.handler.start_response()
+            self.handler.start_response(self.isClone)
             RequestPool._notify(self.uuid, self.dict())
             return self
         elif self.blockType == 'released':
@@ -171,7 +172,8 @@ class Proxy(tornado.web.RequestHandler):
         #read_upstream = lambda x:client.write(x)
 
 
-    def start_response(self):
+    def start_response(self, isClone=False):
+        if isClone: return
         if self.response:
             self.set_status(self.response.code, self.response.reason)
             self._headers = tornado.httputil.HTTPHeaders()
@@ -202,7 +204,7 @@ class Proxy(tornado.web.RequestHandler):
 
 
     @tornado.gen.coroutine
-    def start_request(self):
+    def start_request(self, isClone=False):
         if self.request.headers.get('Proxy-Connection'): del self.request.headers['Proxy-Connection']
         if not self.request.body: self.request.body = None
 
@@ -223,14 +225,17 @@ class Proxy(tornado.web.RequestHandler):
                 streaming_callback = streaming_callback, header_callback = header_callback,
                 raise_error = False, body = self.request.body
                 )
-        print self.response.__dict__
-
-        if self.conf.BlockResponse:
-            RequestPool[self.uuid].blockType = 'response'
-            RequestPool._notify(self.uuid, self.Req.dict())
+        if not isClone:
+            if self.conf.BlockResponse:
+                RequestPool[self.uuid].blockType = 'response'
+                RequestPool._notify(self.uuid, self.Req.dict())
+            else:
+                self.start_response()
+                RequestPool[self.uuid].blockType = 'released'
+                RequestPool._notify(self.uuid, self.Req.dict())
         else:
+            self.start_response(isClone=True)
             RequestPool[self.uuid].blockType = 'released'
-            self.start_response()
             RequestPool._notify(self.uuid, self.Req.dict())
             
             
@@ -258,6 +263,8 @@ class WebServer(tornado.web.RequestHandler):
             Req = RequestPool.get(uuid,None)
             if Req:
                 self.finish(Req.dict(extr=True))
+                return
+            self.finish()
 
         elif rtype == 'ctrl':
             brq = self.get_argument('brq','off')
@@ -267,9 +274,22 @@ class WebServer(tornado.web.RequestHandler):
             self.finish(dict(brq=self.conf.BlockRequest,brs=self.conf.BlockResponse))
             return
 
+        elif rtype == 'clone':
+            uuid = self.get_argument('uuid')
+            Req = RequestPool.get(uuid, None)
+            if Req:
+                uuid = uuid4().hex 
+                newReq = ReqInfo(uuid, Req.handler, isclone=True)
+                newReq.handler.response.code = 0
+                newReq.handler.uuid = uuid
+                newReq.block()
+
+            self.finish('done')
+
         elif rtype == 'releaseall':
             for r in RequestPool:
                 if RequestPool[r].blockType!='released': RequestPool[r].release()
+            self.finish('done')
 
         elif rtype == 'clearlog':
             RequestPool.clear()
@@ -289,6 +309,7 @@ class WebServer(tornado.web.RequestHandler):
             RequestPool[uuid].release()
             self.finish('done')
             return
+
 
 def save_res_Info(wb, cls):
     code = wb.get_argument('code',400)
